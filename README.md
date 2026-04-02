@@ -95,6 +95,14 @@ graph LR
     style T5 fill:#BF5AF2,stroke:#8944AB,color:#fff
 ```
 
+### What It Looks Like
+
+<p align="center">
+  <img src="docs/assets/dashboard-demo.png" alt="ADHD Drift Visualizer Dashboard" width="700">
+</p>
+
+The dashboard shows your initial goal at the top, tracks how far each message drifts from it, and tells you whether you made it back. The topic flow chips, drift curve, and 3D graph all update in real time.
+
 ### Pivots are data, not deficits
 
 The visualizer doesn't judge. A session with 8 pivots isn't "worse" than one with 0. It's **different**. The goal is awareness — see your patterns, understand them, and use that knowledge however you want.

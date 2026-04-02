@@ -208,7 +208,11 @@ class DriftEngine:
     def to_dict(self) -> dict:
         """Serialize the session report for JSON/UI consumption."""
         report = self.report()
+        initial_goal = report.topic_sequence[0] if report.topic_sequence else ""
+        returned_to_goal = initial_goal in report.topic_sequence[1:] if initial_goal else False
         return {
+            "initial_goal": initial_goal,
+            "returned_to_goal": returned_to_goal,
             "total_steps": report.total_steps,
             "total_pivots": report.total_pivots,
             "peak_drift": report.peak_drift,
