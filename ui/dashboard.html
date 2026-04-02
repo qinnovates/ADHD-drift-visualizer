@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ADHD Drift Visualizer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='none' stroke='%2358a6b8' stroke-width='6'/><path d='M30 50 Q50 20 70 50 Q50 80 30 50Z' fill='%2358a6b8' opacity='0.6'/></svg>">
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #21262d;
+    --text: #c9d1d9;
+    --muted: #6e7681;
+    --anchored: #39FF14;
+    --branching: #00E5FF;
+    --tangent: #FF9F0A;
+    --wandering: #FFD60A;
+    --deep_shift: #BF5AF2;
+    --g1: #a3506b;
+    --g2: #9a5cb5;
+    --g5: #58a6b8;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'SF Pro Text','Inter','Helvetica Neue',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+
+  header { padding:24px 32px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
+  header h1 { font-size:20px; font-weight:300; letter-spacing:4px;
+    background:linear-gradient(90deg,var(--g1),var(--g2),var(--g5)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  header .subtitle { font-size:12px; color:var(--muted); margin-top:4px; }
+  .header-actions { display:flex; gap:8px; }
+
+  .app { display:grid; grid-template-columns:1fr 320px; gap:0; min-height:calc(100vh - 80px); }
+  main { padding:24px 32px; overflow-y:auto; }
+  aside { border-left:1px solid var(--border); padding:20px; overflow-y:auto; }
+
+  /* Classification bar */
+  .class-bar { display:flex; gap:2px; height:28px; border-radius:6px; overflow:hidden; margin:16px 0; }
+  .class-bar div { flex:1; display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:700; letter-spacing:0.5px; transition:opacity 0.3s; }
+  .class-bar div.active { outline:2px solid #fff; outline-offset:-2px; }
+  .cb-anchored { background:var(--anchored); color:#000; }
+  .cb-branching { background:var(--branching); color:#000; }
+  .cb-tangent { background:var(--tangent); color:#000; }
+  .cb-wandering { background:var(--wandering); color:#000; }
+  .cb-deep_shift { background:var(--deep_shift); color:#fff; }
+
+  /* Stats */
+  .stats { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin:16px 0; }
+  .stat { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px; text-align:center; }
+  .stat .val { font-size:22px; font-weight:300; letter-spacing:1px; }
+  .stat .label { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:1.5px; margin-top:4px; }
+
+  /* Topic flow */
+  .topic-flow { display:flex; gap:2px; margin:16px 0; overflow-x:auto; padding:8px 0; }
+  .topic-chip { padding:4px 10px; border-radius:12px; font-size:10px; font-weight:600; white-space:nowrap; cursor:pointer; transition:transform 0.2s; }
+  .topic-chip:hover { transform:scale(1.05); }
+  .topic-chip.pivot { border:2px solid #fff; }
+
+  /* Canvas */
+  .drift-canvas-wrap { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:16px; margin:16px 0; }
+  .drift-canvas-wrap h3 { font-size:12px; font-weight:600; margin-bottom:12px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; }
+  canvas { width:100%; border-radius:4px; }
+
+  /* Step table */
+  .step-table { width:100%; border-collapse:collapse; font-size:12px; margin:16px 0; }
+  .step-table th { text-align:left; padding:8px 10px; border-bottom:2px solid var(--border); color:var(--muted); font-weight:600; font-size:10px; text-transform:uppercase; letter-spacing:1px; }
+  .step-table td { padding:8px 10px; border-bottom:1px solid var(--border); }
+  .step-table tr:hover td { background:rgba(255,255,255,0.02); }
+  .step-table .badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:600; }
+  .badge-anchored { background:rgba(57,255,20,0.15); color:var(--anchored); }
+  .badge-branching { background:rgba(0,229,255,0.15); color:var(--branching); }
+  .badge-tangent { background:rgba(255,159,10,0.15); color:var(--tangent); }
+  .badge-wandering { background:rgba(255,214,10,0.15); color:var(--wandering); }
+  .badge-deep_shift { background:rgba(191,90,242,0.15); color:var(--deep_shift); }
+
+  /* Signal bars */
+  .signal-row { display:flex; align-items:center; gap:8px; padding:6px 0; font-size:11px; }
+  .signal-row .name { width:100px; color:var(--muted); font-size:10px; }
+  .signal-bar-bg { flex:1; height:6px; background:var(--bg); border-radius:3px; overflow:hidden; }
+  .signal-bar-fill { height:100%; border-radius:3px; transition:width 0.4s; }
+  .signal-row .val { width:36px; text-align:right; font-size:10px; font-family:monospace; }
+
+  /* Suggestions */
+  .suggestion { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:8px 12px; margin:6px 0; font-size:11px; line-height:1.5; }
+  .suggestion::before { content:"->"; color:var(--exploring); margin-right:6px; }
+
+  /* Input area */
+  .input-area textarea { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:10px; color:var(--text); font-family:inherit; font-size:12px; resize:vertical; min-height:60px; }
+  .input-area textarea:focus { outline:none; border-color:var(--exploring); }
+  .input-area .actions { display:flex; gap:8px; margin-top:8px; }
+  .btn { padding:6px 16px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; font-size:11px; transition:all 0.2s; }
+  .btn:hover { border-color:var(--exploring); }
+  .btn-primary { background:linear-gradient(90deg,var(--g1),var(--g5)); color:#000; border:none; font-weight:600; }
+  .btn-primary:hover { opacity:0.9; }
+
+  .profile-select { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:4px 8px; color:var(--text); font-size:11px; }
+
+  .alert-badge { background:rgba(255,214,10,0.2); color:var(--wandering); padding:2px 8px; border-radius:4px; font-size:10px; font-weight:600; animation:pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+
+  aside h3 { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin:16px 0 8px; }
+  aside h3:first-child { margin-top:0; }
+
+  .empty-state { text-align:center; padding:60px 20px; color:var(--muted); }
+  .empty-state h2 { font-size:16px; font-weight:300; letter-spacing:2px; margin-bottom:8px; color:var(--text); }
+  .empty-state p { font-size:12px; margin-bottom:20px; }
+
+  /* Disclaimer */
+  .disclaimer { font-size:10px; color:var(--muted); text-align:center; padding:8px 32px; border-top:1px solid var(--border); line-height:1.5; }
+
+  .pivot-marker { color:var(--tangent); font-weight:600; font-size:10px; }
+  .topic-tag { font-size:10px; color:var(--muted); font-style:italic; }
+
+  /* Upload */
+  .upload-zone { border:2px dashed var(--border); border-radius:8px; padding:16px; text-align:center; cursor:pointer; transition:border-color 0.3s; margin:8px 0; }
+  .upload-zone:hover { border-color:var(--exploring); }
+  .upload-zone input { display:none; }
+  .upload-zone p { font-size:11px; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>ADHD DRIFT VISUALIZER</h1>
+    <div class="subtitle">Map how you pivot between topics in a conversation</div>
+  </div>
+  <div class="header-actions">
+    <button class="btn" onclick="exportJSON()">Export JSON</button>
+  </div>
+</header>
+
+<div class="app">
+  <main>
+    <!-- Classification bar -->
+    <div class="class-bar">
+      <div class="cb-anchored" id="cb-anchored">ANCHORED<br>0.0-0.1</div>
+      <div class="cb-branching" id="cb-branching">BRANCHING<br>0.1-0.3</div>
+      <div class="cb-tangent" id="cb-tangent">TANGENT<br>0.3-0.6</div>
+      <div class="cb-wandering" id="cb-wandering">WANDERING<br>0.6-0.8</div>
+      <div class="cb-deep_shift" id="cb-deep_shift">DEEP SHIFT<br>0.8-1.0</div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats">
+      <div class="stat"><div class="val" id="stat-steps">0</div><div class="label">Messages</div></div>
+      <div class="stat"><div class="val" id="stat-pivots">0</div><div class="label">Pivots</div></div>
+      <div class="stat"><div class="val" id="stat-peak">0.00</div><div class="label">Peak Drift</div></div>
+      <div class="stat"><div class="val" id="stat-streak">0</div><div class="label">Focus Streak</div></div>
+      <div class="stat"><div class="val" id="stat-trend">--</div><div class="label">Trend</div></div>
+    </div>
+
+    <!-- Topic flow -->
+    <div class="drift-canvas-wrap">
+      <h3>Topic Flow</h3>
+      <div class="topic-flow" id="topic-flow"></div>
+    </div>
+
+    <!-- Drift curve -->
+    <div class="drift-canvas-wrap">
+      <h3>Drift Curve</h3>
+      <canvas id="drift-curve" height="220"></canvas>
+    </div>
+
+    <!-- Signal radar -->
+    <div class="drift-canvas-wrap">
+      <h3>Signal Breakdown (Selected Message)</h3>
+      <canvas id="signal-radar" height="200"></canvas>
+    </div>
+
+    <!-- Step table -->
+    <table class="step-table" id="step-table">
+      <thead>
+        <tr><th>#</th><th>State</th><th>Score</th><th>Topic</th><th>Pivot</th><th>Recovery</th></tr>
+      </thead>
+      <tbody id="step-tbody"></tbody>
+    </table>
+
+    <div class="empty-state" id="empty-state">
+      <h2>No session loaded</h2>
+      <p>Add messages manually, upload a chat log, or load the demo to see drift analysis.</p>
+      <button class="btn btn-primary" onclick="loadDemo()">Load Demo Session</button>
+    </div>
+  </main>
+
+  <aside>
+    <h3>Add Message</h3>
+    <div class="input-area">
+      <textarea id="msg-input" placeholder="Type a message to score its drift..."></textarea>
+      <div class="actions">
+        <button class="btn btn-primary" onclick="addMessage()">Score</button>
+        <button class="btn" onclick="resetSession()">Reset</button>
+      </div>
+    </div>
+
+    <h3>Upload Chat Log</h3>
+    <div class="upload-zone" onclick="document.getElementById('file-input').click()">
+      <input type="file" id="file-input" accept=".md,.txt,.json,.jsonl" onchange="uploadFile(this)">
+      <p>Drop a .md, .txt, or .json chat log</p>
+    </div>
+
+    <h3>Profile</h3>
+    <select class="profile-select" id="profile-select" onchange="changeProfile()">
+      <option value="strict">Strict (task-focused work)</option>
+      <option value="standard" selected>Standard (normal conversation)</option>
+      <option value="creative">Creative (brainstorming)</option>
+      <option value="freeform">Freeform (stream of consciousness)</option>
+    </select>
+
+    <h3>Current Signals</h3>
+    <div id="signal-bars">
+      <div class="signal-row"><span class="name">Semantic Dist</span><div class="signal-bar-bg"><div class="signal-bar-fill" id="sig-semantic" style="width:0; background:var(--exploring);"></div></div><span class="val" id="sig-semantic-val">0.00</span></div>
+      <div class="signal-row"><span class="name">Topic Drift</span><div class="signal-bar-bg"><div class="signal-bar-fill" id="sig-topic" style="width:0; background:var(--hyperfocus);"></div></div><span class="val" id="sig-topic-val">0.00</span></div>
+      <div class="signal-row"><span class="name">Specificity</span><div class="signal-bar-bg"><div class="signal-bar-fill" id="sig-specificity" style="width:0; background:var(--tangent);"></div></div><span class="val" id="sig-specificity-val">0.00</span></div>
+      <div class="signal-row"><span class="name">Velocity</span><div class="signal-bar-bg"><div class="signal-bar-fill" id="sig-velocity" style="width:0; background:var(--g1);"></div></div><span class="val" id="sig-velocity-val">0.00</span></div>
+    </div>
+
+    <h3>Suggestions</h3>
+    <div id="suggestions-area"><p style="font-size:11px; color:var(--muted);">Add a message to see suggestions.</p></div>
+
+    <h3>Most Visited Topic</h3>
+    <div id="top-topic" style="font-size:13px; color:var(--exploring); font-weight:600;">--</div>
+
+    <div style="margin-top:24px; padding-top:16px; border-top:1px solid var(--border);">
+      <button class="btn" onclick="loadDemo()" style="width:100%; margin-bottom:6px;">Load Demo Session</button>
+    </div>
+  </aside>
+</div>
+
+<div class="disclaimer">
+  This tool is not a diagnostic instrument. It does not diagnose, treat, or assess any medical or psychological condition.
+  It visualizes context-switching patterns in conversations — nothing more. Pivots are data, not deficits.
+</div>
+
+<script>
+let sessionData = null;
+const API = window.location.origin;
+
+const COLORS = {
+  anchored: '#39FF14',
+  branching: '#00E5FF',
+  tangent: '#FF9F0A',
+  wandering: '#FFD60A',
+  deep_shift: '#BF5AF2',
+};
+
+const CLASS_NAMES = {
+  anchored: 'ANCHORED',
+  branching: 'BRANCHING',
+  tangent: 'TANGENT',
+  wandering: 'WANDERING',
+  deep_shift: 'DEEP SHIFT',
+};
+
+async function fetchSession() {
+  const res = await fetch(`${API}/api/session`);
+  sessionData = await res.json();
+  render();
+}
+
+async function addMessage() {
+  const text = document.getElementById('msg-input').value.trim();
+  if (!text) return;
+
+  const res = await fetch(`${API}/api/message`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, role: 'user' }),
+  });
+  sessionData = await res.json();
+  document.getElementById('msg-input').value = '';
+  render();
+}
+
+async function resetSession() {
+  const profile = document.getElementById('profile-select').value;
+  await fetch(`${API}/api/reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile }),
+  });
+  sessionData = { steps: [], total_steps: 0, total_pivots: 0, peak_drift: 0, peak_drift_step: 0, mean_drift: 0, final_classification: 'anchored', drift_velocity_trend: 'stable', longest_focus_streak: 0, most_visited_topic: 'none', topic_sequence: [], pivot_points: [], alerts: [] };
+  render();
+}
+
+async function loadDemo() {
+  const res = await fetch(`${API}/api/demo`, { method: 'POST' });
+  sessionData = await res.json();
+  render();
+}
+
+async function changeProfile() { await resetSession(); }
+
+async function uploadFile(input) {
+  if (!input.files.length) return;
+  const formData = new FormData();
+  formData.append('file', input.files[0]);
+  formData.append('profile', document.getElementById('profile-select').value);
+
+  const res = await fetch(`${API}/api/upload`, { method: 'POST', body: formData });
+  if (res.ok) {
+    sessionData = await res.json();
+    render();
+  }
+  input.value = '';
+}
+
+function exportJSON() {
+  if (!sessionData) return;
+  const blob = new Blob([JSON.stringify(sessionData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `adhd-drift-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function render() {
+  if (!sessionData || sessionData.total_steps === 0) {
+    document.getElementById('empty-state').style.display = 'block';
+    document.getElementById('step-table').style.display = 'none';
+    document.getElementById('stat-steps').textContent = '0';
+    document.getElementById('stat-pivots').textContent = '0';
+    document.getElementById('stat-peak').textContent = '0.00';
+    document.getElementById('stat-streak').textContent = '0';
+    document.getElementById('stat-trend').textContent = '--';
+    document.getElementById('topic-flow').innerHTML = '';
+    document.getElementById('top-topic').textContent = '--';
+    clearClassBar();
+    return;
+  }
+
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('step-table').style.display = 'table';
+
+  // Stats
+  document.getElementById('stat-steps').textContent = sessionData.total_steps;
+  document.getElementById('stat-pivots').textContent = sessionData.total_pivots;
+  document.getElementById('stat-peak').textContent = sessionData.peak_drift.toFixed(3);
+  document.getElementById('stat-streak').textContent = sessionData.longest_focus_streak;
+  document.getElementById('stat-trend').textContent = sessionData.drift_velocity_trend;
+
+  const peakEl = document.getElementById('stat-peak');
+  peakEl.style.color = classColor(classifyScore(sessionData.peak_drift));
+
+  // Classification bar
+  updateClassBar(sessionData.final_classification);
+
+  // Top topic
+  document.getElementById('top-topic').textContent = sessionData.most_visited_topic || '--';
+
+  // Topic flow chips
+  renderTopicFlow();
+
+  // Step table
+  const tbody = document.getElementById('step-tbody');
+  tbody.innerHTML = '';
+  sessionData.steps.forEach((s, i) => {
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.onclick = () => selectStep(i);
+    tr.innerHTML = `
+      <td>${s.index}</td>
+      <td><span class="badge badge-${s.classification}">${CLASS_NAMES[s.classification] || s.classification.toUpperCase()}</span></td>
+      <td style="color:${COLORS[s.classification]}">${s.score.toFixed(3)}</td>
+      <td class="topic-tag">${s.topic_label}</td>
+      <td>${s.is_pivot ? '<span class="pivot-marker">PIVOT</span>' : ''}</td>
+      <td>${s.recovery_score.toFixed(2)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  drawDriftCurve();
+  drawSignalRadar();
+
+  const latest = sessionData.steps[sessionData.steps.length - 1];
+  if (latest) {
+    updateSignalBars(latest.signals);
+    updateSuggestions(latest.suggestions);
+  }
+}
+
+function renderTopicFlow() {
+  const container = document.getElementById('topic-flow');
+  container.innerHTML = '';
+  if (!sessionData || !sessionData.steps.length) return;
+
+  sessionData.steps.forEach((s, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'topic-chip' + (s.is_pivot ? ' pivot' : '');
+    chip.style.background = COLORS[s.classification] + '22';
+    chip.style.color = COLORS[s.classification];
+    chip.textContent = `${s.index}: ${s.topic_label}`;
+    chip.onclick = () => selectStep(i);
+    container.appendChild(chip);
+  });
+}
+
+function selectStep(idx) {
+  const step = sessionData.steps[idx];
+  if (step) {
+    updateSignalBars(step.signals);
+    updateSuggestions(step.suggestions);
+  }
+}
+
+function updateSignalBars(signals) {
+  const map = [
+    ['semantic', signals.semantic_distance],
+    ['topic', signals.topic_divergence],
+    ['specificity', signals.specificity_shift],
+    ['velocity', signals.velocity],
+  ];
+  map.forEach(([key, val]) => {
+    document.getElementById(`sig-${key}`).style.width = `${val * 100}%`;
+    document.getElementById(`sig-${key}-val`).textContent = val.toFixed(2);
+  });
+}
+
+function updateSuggestions(suggestions) {
+  const area = document.getElementById('suggestions-area');
+  if (!suggestions || suggestions.length === 0) {
+    area.innerHTML = '<p style="font-size:11px; color:var(--anchored);">On track. No suggestions.</p>';
+    return;
+  }
+  area.innerHTML = suggestions.map(s => `<div class="suggestion">${s}</div>`).join('');
+}
+
+function classifyScore(score) {
+  if (score < 0.1) return 'anchored';
+  if (score < 0.3) return 'branching';
+  if (score < 0.6) return 'tangent';
+  if (score < 0.8) return 'wandering';
+  return 'deep_shift';
+}
+
+function classColor(cls) { return COLORS[cls] || '#c9d1d9'; }
+
+function clearClassBar() {
+  ['anchored','branching','tangent','wandering','deep_shift'].forEach(c => {
+    document.getElementById(`cb-${c}`).classList.remove('active');
+    document.getElementById(`cb-${c}`).style.opacity = '0.4';
+  });
+}
+
+function updateClassBar(classification) {
+  ['anchored','branching','tangent','wandering','deep_shift'].forEach(c => {
+    const el = document.getElementById(`cb-${c}`);
+    if (c === classification) {
+      el.classList.add('active');
+      el.style.opacity = '1';
+    } else {
+      el.classList.remove('active');
+      el.style.opacity = '0.3';
+    }
+  });
+}
+
+// --- Canvas: Drift Curve ---
+
+function drawDriftCurve() {
+  const canvas = document.getElementById('drift-curve');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = 220 * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = 220;
+  ctx.clearRect(0, 0, W, H);
+
+  if (!sessionData || sessionData.steps.length < 2) return;
+
+  const steps = sessionData.steps;
+  const pad = { l: 40, r: 20, t: 20, b: 40 };
+  const plotW = W - pad.l - pad.r;
+  const plotH = H - pad.t - pad.b;
+
+  // Zone backgrounds
+  const zones = [
+    { y: 0.0, h: 0.1, color: 'rgba(57,255,20,0.06)' },
+    { y: 0.1, h: 0.2, color: 'rgba(0,229,255,0.06)' },
+    { y: 0.3, h: 0.3, color: 'rgba(255,159,10,0.06)' },
+    { y: 0.6, h: 0.2, color: 'rgba(255,214,10,0.06)' },
+    { y: 0.8, h: 0.2, color: 'rgba(191,90,242,0.06)' },
+  ];
+  zones.forEach(z => {
+    ctx.fillStyle = z.color;
+    ctx.fillRect(pad.l, pad.t + (1 - z.y - z.h) * plotH, plotW, z.h * plotH);
+  });
+
+  // Grid lines
+  ctx.strokeStyle = '#21262d';
+  ctx.lineWidth = 1;
+  [0.1, 0.3, 0.6, 0.8].forEach(v => {
+    const y = pad.t + (1 - v) * plotH;
+    ctx.beginPath();
+    ctx.moveTo(pad.l, y);
+    ctx.lineTo(W - pad.r, y);
+    ctx.stroke();
+  });
+
+  // Y-axis labels
+  ctx.fillStyle = '#6e7681';
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'right';
+  [0, 0.1, 0.3, 0.6, 0.8, 1.0].forEach(v => {
+    ctx.fillText(v.toFixed(1), pad.l - 6, pad.t + (1 - v) * plotH + 3);
+  });
+
+  const xStep = plotW / (steps.length - 1);
+
+  // Plot line
+  ctx.beginPath();
+  ctx.lineWidth = 2;
+  steps.forEach((s, i) => {
+    const x = pad.l + i * xStep;
+    const y = pad.t + (1 - s.score) * plotH;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = '#c9d1d9';
+  ctx.stroke();
+
+  // Dots + topic labels
+  steps.forEach((s, i) => {
+    const x = pad.l + i * xStep;
+    const y = pad.t + (1 - s.score) * plotH;
+
+    // Pivot markers
+    if (s.is_pivot) {
+      ctx.beginPath();
+      ctx.moveTo(x, pad.t);
+      ctx.lineTo(x, pad.t + plotH);
+      ctx.strokeStyle = 'rgba(255,159,10,0.3)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Dot
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = COLORS[s.classification];
+    ctx.fill();
+
+    // Topic label below axis
+    ctx.save();
+    ctx.translate(x, H - 4);
+    ctx.rotate(-Math.PI / 4);
+    ctx.fillStyle = '#6e7681';
+    ctx.font = '8px sans-serif';
+    ctx.textAlign = 'right';
+    const label = s.topic_label.length > 12 ? s.topic_label.slice(0, 12) + '..' : s.topic_label;
+    ctx.fillText(label, 0, 0);
+    ctx.restore();
+  });
+
+  // Cumulative drift line
+  ctx.beginPath();
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 3]);
+  ctx.strokeStyle = 'rgba(191,90,242,0.5)';
+  steps.forEach((s, i) => {
+    const x = pad.l + i * xStep;
+    const y = pad.t + (1 - s.cumulative_drift) * plotH;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+// --- Canvas: Signal Radar ---
+
+function drawSignalRadar() {
+  const canvas = document.getElementById('signal-radar');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = 200 * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = 200;
+  ctx.clearRect(0, 0, W, H);
+
+  if (!sessionData || sessionData.steps.length === 0) return;
+
+  const latest = sessionData.steps[sessionData.steps.length - 1];
+  const signals = [
+    { name: 'Semantic', val: latest.signals.semantic_distance, color: '#00E5FF' },
+    { name: 'Topic', val: latest.signals.topic_divergence, color: '#BF5AF2' },
+    { name: 'Specificity', val: latest.signals.specificity_shift, color: '#FF9F0A' },
+    { name: 'Velocity', val: latest.signals.velocity, color: '#a3506b' },
+  ];
+
+  const cx = W / 2;
+  const cy = H / 2;
+  const maxR = Math.min(cx, cy) - 30;
+  const n = signals.length;
+  const angleStep = (Math.PI * 2) / n;
+
+  [0.25, 0.5, 0.75, 1.0].forEach(r => {
+    ctx.beginPath();
+    for (let i = 0; i <= n; i++) {
+      const angle = i * angleStep - Math.PI / 2;
+      const x = cx + Math.cos(angle) * maxR * r;
+      const y = cy + Math.sin(angle) * maxR * r;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = '#21262d';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
+
+  signals.forEach((s, i) => {
+    const angle = i * angleStep - Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(angle) * maxR, cy + Math.sin(angle) * maxR);
+    ctx.strokeStyle = '#21262d';
+    ctx.stroke();
+
+    const lx = cx + Math.cos(angle) * (maxR + 16);
+    const ly = cy + Math.sin(angle) * (maxR + 16);
+    ctx.fillStyle = '#6e7681';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(s.name, lx, ly);
+  });
+
+  ctx.beginPath();
+  signals.forEach((s, i) => {
+    const angle = i * angleStep - Math.PI / 2;
+    const r = s.val * maxR;
+    const x = cx + Math.cos(angle) * r;
+    const y = cy + Math.sin(angle) * r;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(88,166,184,0.15)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(88,166,184,0.8)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  signals.forEach((s, i) => {
+    const angle = i * angleStep - Math.PI / 2;
+    const r = s.val * maxR;
+    ctx.beginPath();
+    ctx.arc(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r, 3, 0, Math.PI * 2);
+    ctx.fillStyle = s.color;
+    ctx.fill();
+  });
+}
+
+window.addEventListener('resize', () => { if (sessionData) { drawDriftCurve(); drawSignalRadar(); } });
+
+fetch(`${API}/api/session`)
+  .then(r => r.json())
+  .then(data => { sessionData = data; render(); })
+  .catch(() => render());
+</script>
+
+</body>
+</html>
