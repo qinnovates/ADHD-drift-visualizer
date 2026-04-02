@@ -14,13 +14,13 @@
 
 ---
 
-## The Problem
+## Why This Exists
 
-ADHD conversations don't follow a straight line. You start on auth tokens, pivot to a CSS bug, remember a meeting, circle back, then go deep on architecture. **That's not a bug — it's how your brain works.**
+Conversations don't follow straight lines. You start planning your TikTok schedule, pivot to a song stuck in your head, remember you wanted concert tickets, check your budget, then circle back to content strategy. **That's not a flaw — it's how non-linear thinking works.**
 
 But it's invisible. You finish a session and wonder: *how many topics did I actually touch? Where did I drift? Did I ever come back?*
 
-**ADHD Drift Visualizer answers those questions.** Feed it a chat session and it maps every topic pivot, scores how far you drifted, and shows you the shape of your conversation.
+**ADHD Drift Visualizer makes the invisible visible.** Feed it a chat session and it maps every topic pivot, scores how far you drifted, and shows you the shape of your conversation.
 
 ## How It Works
 
@@ -28,22 +28,22 @@ Feed it a conversation. It scores every message for drift from your starting top
 
 ```mermaid
 graph LR
-    A["Message 1<br><b>Auth tokens</b>"] -->|pivot| B["Message 3<br><b>CSS bug</b>"]
-    A -->|stay| A2["Message 2<br><b>Auth refresh</b>"]
-    B -->|pivot| C["Message 5<br><b>Meeting prep</b>"]
-    C -->|return| D["Message 7<br><b>Auth debate</b>"]
-    D -->|pivot| E["Message 10<br><b>DB migration</b>"]
-    D -->|stay| D2["Message 8<br><b>Auth arch</b>"]
-    E -->|return| F["Message 12<br><b>Auth fix</b>"]
+    A["<b>TikTok strategy</b><br>posting schedule"] -->|pivot| B["<b>Song stuck in head</b><br>from a reel"]
+    A -->|stay| A2["<b>TikTok hashtags</b><br>trending sounds"]
+    B -->|pivot| C["<b>Concert tickets</b><br>are they sold out?"]
+    C -->|pivot| D["<b>Budget</b><br>can I afford it?"]
+    D -->|return| E["<b>TikTok monetization</b><br>creator fund"]
+    E -->|pivot| F["<b>Instagram Reels</b><br>cross-posting"]
+    F -->|return| G["<b>TikTok analytics</b><br>back on track"]
 
     style A fill:#39FF14,stroke:#248A3D,color:#000
     style A2 fill:#39FF14,stroke:#248A3D,color:#000
     style B fill:#FF9F0A,stroke:#C77800,color:#000
     style C fill:#BF5AF2,stroke:#8944AB,color:#fff
-    style D fill:#FF9F0A,stroke:#C77800,color:#000
-    style D2 fill:#00E5FF,stroke:#0071A4,color:#000
-    style E fill:#FFD60A,stroke:#B8A000,color:#000
-    style F fill:#39FF14,stroke:#248A3D,color:#000
+    style D fill:#FFD60A,stroke:#B8A000,color:#000
+    style E fill:#00E5FF,stroke:#0071A4,color:#000
+    style F fill:#FF9F0A,stroke:#C77800,color:#000
+    style G fill:#39FF14,stroke:#248A3D,color:#000
 ```
 
 ### Signal Pipeline
@@ -241,17 +241,6 @@ ui/
 | Freeform | 0.80 | 0.70 | Stream of consciousness |
 
 </details>
-
----
-
-## Development
-
-```bash
-pip install -e ".[dev]"
-ADHD_DRIFT_EMBEDDINGS=local pytest
-ruff check src/
-python -m adhd_drift.demo
-```
 
 ## License
 

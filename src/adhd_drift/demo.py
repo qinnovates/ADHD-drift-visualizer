@@ -1,7 +1,8 @@
-"""Demo session showing ADHD-style conversation drift.
+"""Demo session showing non-linear conversation drift.
 
-A realistic chat session where someone starts working on auth, pivots to a
-CSS bug, remembers a meeting, circles back, then drifts into architecture.
+A realistic chat session where someone starts planning social media
+content, pivots through music, concerts, budgeting, and cross-platform
+strategy before circling back.
 """
 
 from adhd_drift.types import ChatMessage
@@ -9,67 +10,67 @@ from adhd_drift.types import ChatMessage
 SAMPLE_SESSION = [
     ChatMessage(
         index=0,
-        text="Let's fix the auth token refresh. The JWT expires after 15 minutes and users get logged out mid-session.",
+        text="I need to figure out my TikTok posting schedule. What times get the most engagement for lifestyle content?",
         role="user",
     ),
     ChatMessage(
         index=1,
-        text="I'll look at the token refresh middleware. The interceptor should catch 401 responses and retry with a fresh token.",
+        text="For lifestyle content, peak engagement is typically 7-9am and 7-11pm. Tuesday and Thursday tend to perform best. Consistency matters more than perfect timing though.",
         role="assistant",
     ),
     ChatMessage(
         index=2,
-        text="Actually wait, before that — there's a CSS bug on the settings page. The sidebar overlaps the main content on mobile. Can you check that real quick?",
+        text="Ok cool. Also what hashtags are trending right now? I keep hearing that sound from that one reel — you know the one with the remix of that Sabrina Carpenter song?",
         role="user",
     ),
     ChatMessage(
         index=3,
-        text="The sidebar uses position: fixed but doesn't account for the mobile viewport. We need a media query breakpoint at 768px.",
+        text="I can help with trending hashtags. For lifestyle content right now: #dayinmylife, #grwm, #aesthetic. As for the Sabrina Carpenter remix, that's been huge on Reels and TikTok this month.",
         role="assistant",
     ),
     ChatMessage(
         index=4,
-        text="Oh right I have a meeting in 10 minutes about the Q3 roadmap. What were the key features we said we'd ship?",
+        text="Omg wait she's touring right? Are there still tickets for the LA show? I saw someone reselling them but they were like $400",
         role="user",
     ),
     ChatMessage(
         index=5,
-        text="Based on the last planning session: auth improvements, dashboard redesign, and the export feature. Auth was priority 1.",
+        text="Her Short n Sweet tour has most major dates sold out. Resale prices for LA are running $350-500 depending on section. StubHub and SeatGeek are the main resale platforms.",
         role="assistant",
     ),
     ChatMessage(
         index=6,
-        text="Ok good. Back to the auth thing — actually, should we switch from JWT to session tokens? I read that JWTs are overkill for our use case.",
+        text="$400 is a lot. I just paid rent and my car insurance went up this month. How much do TikTok creators actually make? Like is the creator fund even worth it?",
         role="user",
     ),
     ChatMessage(
         index=7,
-        text="That's a bigger architectural decision. JWTs work fine for your scale. The immediate fix is the refresh interceptor — we can evaluate session tokens later.",
+        text="The TikTok Creator Fund pays roughly 2-4 cents per 1,000 views. Most creators say the real money is in brand deals and affiliate links, not the fund itself. You typically need 100k+ followers before brands reach out consistently.",
         role="assistant",
     ),
     ChatMessage(
         index=8,
-        text="You know what, the whole auth layer feels wrong. We're using three different middleware packages. Can we consolidate?",
+        text="That makes sense. What about cross-posting to Instagram Reels? Does the algorithm punish you for posting the same content with a TikTok watermark?",
         role="user",
     ),
     ChatMessage(
         index=9,
-        text="That's scope creep from the original ask (token refresh). I'd suggest: fix the refresh bug now, file a ticket for auth consolidation, and tackle it in a dedicated sprint.",
+        text="Yes, Instagram deprioritizes videos with the TikTok watermark. Best practice is to export without watermark using SnapTik or save the original before posting to TikTok. Some creators film once and edit separately for each platform.",
         role="assistant",
     ),
     ChatMessage(
         index=10,
-        text="Fair. Let's do the refresh fix. Also can you remind me — did we ever fix that database migration that was failing on staging?",
+        text="Smart. Ok back to the original question — for my posting schedule, should I batch content on weekends and schedule it out? What tools are good for that?",
         role="user",
     ),
     ChatMessage(
         index=11,
-        text="I don't have context on the staging migration. That might be a separate issue to investigate. Want to focus on the auth refresh first?",
+        text="Batching is the move. Later and Buffer both support TikTok scheduling now. Film 5-7 videos on Sunday, schedule for the week. Keeps you consistent without daily pressure.",
         role="assistant",
     ),
     ChatMessage(
         index=12,
-        text="Yeah let's do it. Show me the interceptor code.",
+        text="Perfect. I'll try batching this Sunday. Oh wait — do you think I should start a separate account for my cooking content or keep everything on one?",
         role="user",
     ),
 ]
@@ -82,9 +83,9 @@ def run_demo():
     engine = DriftEngine()
     for msg in SAMPLE_SESSION:
         score = engine.add_message(msg)
-        pivot_marker = " ** PIVOT **" if score.is_pivot else ""
+        pivot_marker = " *PIVOT*" if score.is_pivot else ""
         print(
-            f"  [{score.step_index:2d}] {score.classification.value:18s} "
+            f"  [{score.step_index:2d}] {score.classification.value:12s} "
             f"score={score.composite_score:.3f}  "
             f"topic='{score.topic_label}'{pivot_marker}"
         )
