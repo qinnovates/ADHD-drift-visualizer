@@ -664,36 +664,120 @@ function buildTopicGraph() {
     container.innerHTML = '';
   }
 
-  // Build 3D force graph
-  topicGraph = ForceGraph3D()(container)
-    .backgroundColor('#0d1117')
-    .width(container.clientWidth)
-    .height(360)
-    .graphData({ nodes, links })
-    // Nodes
-    .nodeLabel(n => `<div style="background:#161b22;padding:4px 8px;border-radius:4px;border:1px solid #21262d;font-size:11px;color:#c9d1d9;font-family:sans-serif;"><strong>${n.name}</strong><br>Visits: ${n.val}<br>Peak: ${CLASS_NAMES[n.classification] || n.classification}</div>`)
-    .nodeColor(n => n.color)
-    .nodeVal(n => n.val * 3)
-    .nodeOpacity(0.9)
-    // Links
-    .linkWidth(l => Math.max(1, l.value * 1.5))
-    .linkColor(() => 'rgba(110, 118, 129, 0.4)')
-    .linkDirectionalArrowLength(4)
-    .linkDirectionalArrowRelPos(1)
-    .linkDirectionalParticles(l => l.value)
-    .linkDirectionalParticleWidth(2)
-    .linkDirectionalParticleColor(() => '#58a6b8')
-    // Camera
-    .cameraPosition({ z: 200 })
-    // Node text
-    .nodeThreeObjectExtend(true)
-    .nodeThreeObject(node => {
-      const sprite = new SpriteText(node.name);
-      sprite.color = node.color;
-      sprite.textHeight = 4;
-      sprite.position.y = 8;
-      return sprite;
-    });
+  // Try 3D (WebGL), fall back to 2D canvas
+  try {
+    const testCanvas = document.createElement('canvas');
+    const gl = testCanvas.getContext('webgl2') || testCanvas.getContext('webgl');
+    if (!gl) throw new Error('No WebGL');
+
+    topicGraph = ForceGraph3D()(container)
+      .backgroundColor('#0d1117')
+      .width(container.clientWidth)
+      .height(360)
+      .graphData({ nodes, links })
+      .nodeLabel(n => `<div style="background:#161b22;padding:4px 8px;border-radius:4px;border:1px solid #21262d;font-size:11px;color:#c9d1d9;font-family:sans-serif;"><strong>${n.name}</strong><br>Visits: ${n.val}<br>Peak: ${CLASS_NAMES[n.classification] || n.classification}</div>`)
+      .nodeColor(n => n.color)
+      .nodeVal(n => n.val * 3)
+      .nodeOpacity(0.9)
+      .linkWidth(l => Math.max(1, l.value * 1.5))
+      .linkColor(() => 'rgba(110, 118, 129, 0.4)')
+      .linkDirectionalArrowLength(4)
+      .linkDirectionalArrowRelPos(1)
+      .linkDirectionalParticles(l => l.value)
+      .linkDirectionalParticleWidth(2)
+      .linkDirectionalParticleColor(() => '#58a6b8')
+      .cameraPosition({ z: 200 })
+      .nodeThreeObjectExtend(true)
+      .nodeThreeObject(node => {
+        const sprite = new SpriteText(node.name);
+        sprite.color = node.color;
+        sprite.textHeight = 4;
+        sprite.position.y = 8;
+        return sprite;
+      });
+  } catch (e) {
+    // 2D canvas fallback
+    draw2DGraph(container, nodes, links);
+  }
+}
+
+function draw2DGraph(container, nodes, links) {
+  container.innerHTML = '';
+  const canvas = document.createElement('canvas');
+  canvas.width = container.clientWidth * 2;
+  canvas.height = 360 * 2;
+  canvas.style.width = '100%';
+  canvas.style.height = '360px';
+  container.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(2, 2);
+  const W = container.clientWidth;
+  const H = 360;
+
+  // Simple force layout: place nodes in a circle, then nudge
+  const cx = W / 2, cy = H / 2, radius = Math.min(cx, cy) - 60;
+  nodes.forEach((n, i) => {
+    const angle = (i / nodes.length) * Math.PI * 2 - Math.PI / 2;
+    n.x = cx + Math.cos(angle) * radius;
+    n.y = cy + Math.sin(angle) * radius;
+  });
+
+  const nodeMap = {};
+  nodes.forEach(n => { nodeMap[n.id] = n; });
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Draw edges
+  links.forEach(l => {
+    const src = nodeMap[l.source] || nodeMap[l.source.id];
+    const tgt = nodeMap[l.target] || nodeMap[l.target.id];
+    if (!src || !tgt) return;
+
+    ctx.beginPath();
+    ctx.moveTo(src.x, src.y);
+    ctx.lineTo(tgt.x, tgt.y);
+    ctx.strokeStyle = 'rgba(110, 118, 129, 0.4)';
+    ctx.lineWidth = Math.max(1, l.value * 1.5);
+    ctx.stroke();
+
+    // Arrow
+    const dx = tgt.x - src.x, dy = tgt.y - src.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1) return;
+    const ux = dx / len, uy = dy / len;
+    const nodeR = Math.sqrt(tgt.val || 1) * 6 + 8;
+    const ax = tgt.x - ux * nodeR, ay = tgt.y - uy * nodeR;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(ax - ux * 8 + uy * 4, ay - uy * 8 - ux * 4);
+    ctx.lineTo(ax - ux * 8 - uy * 4, ay - uy * 8 + ux * 4);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(88, 166, 184, 0.6)';
+    ctx.fill();
+  });
+
+  // Draw nodes
+  nodes.forEach(n => {
+    const r = Math.sqrt(n.val || 1) * 6 + 6;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = n.color + '33';
+    ctx.fill();
+    ctx.strokeStyle = n.color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Label
+    ctx.fillStyle = n.color;
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(n.name, n.x, n.y - r - 6);
+
+    // Visit count
+    ctx.fillStyle = '#6e7681';
+    ctx.font = '9px monospace';
+    ctx.fillText(n.val + 'x', n.x, n.y + 4);
+  });
 }
 
 window.addEventListener('resize', () => {
