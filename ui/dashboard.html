@@ -169,10 +169,10 @@
       <canvas id="drift-curve" height="220"></canvas>
     </div>
 
-    <!-- 3D Topic Graph -->
+    <!-- Steering Map -->
     <div class="drift-canvas-wrap" id="graph-wrap">
-      <h3>Topic Graph — How Your Thinking Steers</h3>
-      <div id="topic-graph" style="height:360px; border-radius:4px; overflow:hidden;"></div>
+      <h3>Steering Map — Where You Could Have Returned</h3>
+      <canvas id="steering-map" height="280"></canvas>
     </div>
 
     <!-- Step table -->
@@ -239,12 +239,8 @@
   It visualizes context-switching patterns in conversations — nothing more. Pivots are data, not deficits.
 </div>
 
-<script src="https://unpkg.com/three@0.175.0/build/three.min.js"></script>
-<script src="https://unpkg.com/three-spritetext@1"></script>
-<script src="https://unpkg.com/3d-force-graph@1"></script>
 <script>
 let sessionData = null;
-let topicGraph = null;
 const API = window.location.origin;
 
 const COLORS = {
@@ -403,7 +399,7 @@ function render() {
   });
 
   drawDriftCurve();
-  buildTopicGraph();
+  drawSteeringMap();
 
   const latest = sessionData.steps[sessionData.steps.length - 1];
   if (latest) {
@@ -612,180 +608,168 @@ function drawDriftCurve() {
   ctx.setLineDash([]);
 }
 
-// --- 3D Topic Graph ---
+// --- Steering Map ---
+// Timeline showing the actual path vs where you could have returned to goal.
+// X = message index, Y = drift score (0 at top = on target, 1.0 at bottom = far off).
+// Solid line = actual path. Dashed green lines = "return to goal" opportunities at each pivot.
 
-function buildTopicGraph() {
-  const container = document.getElementById('topic-graph');
-  if (!sessionData || sessionData.steps.length < 2) {
-    container.innerHTML = '<p style="text-align:center; color:#6e7681; padding:40px; font-size:12px;">Load a session to see the topic graph.</p>';
-    return;
-  }
-
-  const steps = sessionData.steps;
-
-  // Build nodes: one per unique topic, sized by visit frequency
-  const topicCounts = {};
-  const topicClassification = {};
-  steps.forEach(s => {
-    const t = s.topic_label;
-    topicCounts[t] = (topicCounts[t] || 0) + 1;
-    // Keep the highest-drift classification for color
-    if (!topicClassification[t] || s.score > (topicClassification[t].score || 0)) {
-      topicClassification[t] = { classification: s.classification, score: s.score };
-    }
-  });
-
-  const nodes = Object.keys(topicCounts).map(topic => ({
-    id: topic,
-    name: topic,
-    val: topicCounts[topic],
-    color: COLORS[topicClassification[topic].classification] || '#c9d1d9',
-    classification: topicClassification[topic].classification,
-  }));
-
-  // Build edges: transitions between consecutive topics
-  const edgeMap = {};
-  for (let i = 1; i < steps.length; i++) {
-    const from = steps[i - 1].topic_label;
-    const to = steps[i].topic_label;
-    if (from === to) continue; // same topic, no edge
-    const key = `${from}|||${to}`;
-    edgeMap[key] = (edgeMap[key] || 0) + 1;
-  }
-
-  const links = Object.entries(edgeMap).map(([key, count]) => {
-    const [source, target] = key.split('|||');
-    return { source, target, value: count };
-  });
-
-  // Destroy previous graph
-  if (topicGraph) {
-    topicGraph._destructor && topicGraph._destructor();
-    container.innerHTML = '';
-  }
-
-  // Try 3D (WebGL), fall back to 2D canvas
-  try {
-    const testCanvas = document.createElement('canvas');
-    const gl = testCanvas.getContext('webgl2') || testCanvas.getContext('webgl');
-    if (!gl) throw new Error('No WebGL');
-
-    topicGraph = ForceGraph3D()(container)
-      .backgroundColor('#0d1117')
-      .width(container.clientWidth)
-      .height(360)
-      .graphData({ nodes, links })
-      .nodeLabel(n => `<div style="background:#161b22;padding:4px 8px;border-radius:4px;border:1px solid #21262d;font-size:11px;color:#c9d1d9;font-family:sans-serif;"><strong>${n.name}</strong><br>Visits: ${n.val}<br>Peak: ${CLASS_NAMES[n.classification] || n.classification}</div>`)
-      .nodeColor(n => n.color)
-      .nodeVal(n => n.val * 3)
-      .nodeOpacity(0.9)
-      .linkWidth(l => Math.max(1, l.value * 1.5))
-      .linkColor(() => 'rgba(110, 118, 129, 0.4)')
-      .linkDirectionalArrowLength(4)
-      .linkDirectionalArrowRelPos(1)
-      .linkDirectionalParticles(l => l.value)
-      .linkDirectionalParticleWidth(2)
-      .linkDirectionalParticleColor(() => '#58a6b8')
-      .cameraPosition({ z: 200 })
-      .nodeThreeObjectExtend(true)
-      .nodeThreeObject(node => {
-        const sprite = new SpriteText(node.name);
-        sprite.color = node.color;
-        sprite.textHeight = 4;
-        sprite.position.y = 8;
-        return sprite;
-      });
-  } catch (e) {
-    // 2D canvas fallback
-    draw2DGraph(container, nodes, links);
-  }
-}
-
-function draw2DGraph(container, nodes, links) {
-  container.innerHTML = '';
-  const canvas = document.createElement('canvas');
-  canvas.width = container.clientWidth * 2;
-  canvas.height = 360 * 2;
-  canvas.style.width = '100%';
-  canvas.style.height = '360px';
-  container.appendChild(canvas);
+function drawSteeringMap() {
+  const canvas = document.getElementById('steering-map');
+  if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  ctx.scale(2, 2);
-  const W = container.clientWidth;
-  const H = 360;
-
-  // Simple force layout: place nodes in a circle, then nudge
-  const cx = W / 2, cy = H / 2, radius = Math.min(cx, cy) - 60;
-  nodes.forEach((n, i) => {
-    const angle = (i / nodes.length) * Math.PI * 2 - Math.PI / 2;
-    n.x = cx + Math.cos(angle) * radius;
-    n.y = cy + Math.sin(angle) * radius;
-  });
-
-  const nodeMap = {};
-  nodes.forEach(n => { nodeMap[n.id] = n; });
-
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = 280 * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = 280;
   ctx.clearRect(0, 0, W, H);
 
-  // Draw edges
-  links.forEach(l => {
-    const src = nodeMap[l.source] || nodeMap[l.source.id];
-    const tgt = nodeMap[l.target] || nodeMap[l.target.id];
-    if (!src || !tgt) return;
+  if (!sessionData || sessionData.steps.length < 2) return;
+
+  const steps = sessionData.steps;
+  const pad = { l: 50, r: 20, t: 30, b: 50 };
+  const plotW = W - pad.l - pad.r;
+  const plotH = H - pad.t - pad.b;
+  const xStep = plotW / (steps.length - 1);
+
+  // --- Target zone (green band at top = score 0.0) ---
+  ctx.fillStyle = 'rgba(57, 255, 20, 0.08)';
+  ctx.fillRect(pad.l, pad.t, plotW, plotH * 0.1);
+  ctx.fillStyle = 'rgba(57, 255, 20, 0.4)';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('ON TARGET', pad.l + 6, pad.t + 14);
+
+  // --- "Could have returned" lines at each pivot ---
+  // At every pivot point, draw a dashed green line from that point
+  // curving back down to score 0.0 over the next 2 steps
+  steps.forEach((s, i) => {
+    if (!s.is_pivot || i === 0) return;
+    const px = pad.l + i * xStep;
+    const py = pad.t + s.score * plotH;
+    const targetY = pad.t; // score 0.0
+
+    // Where the return WOULD land (2 steps later or end)
+    const returnIdx = Math.min(i + 2, steps.length - 1);
+    const returnX = pad.l + returnIdx * xStep;
 
     ctx.beginPath();
-    ctx.moveTo(src.x, src.y);
-    ctx.lineTo(tgt.x, tgt.y);
-    ctx.strokeStyle = 'rgba(110, 118, 129, 0.4)';
-    ctx.lineWidth = Math.max(1, l.value * 1.5);
+    ctx.setLineDash([3, 4]);
+    ctx.strokeStyle = 'rgba(57, 255, 20, 0.2)';
+    ctx.lineWidth = 1.5;
+    // Curve from pivot point back to target zone
+    ctx.moveTo(px, py);
+    ctx.bezierCurveTo(
+      px + (returnX - px) * 0.3, py,
+      px + (returnX - px) * 0.7, targetY + 10,
+      returnX, targetY + 5
+    );
     ctx.stroke();
+    ctx.setLineDash([]);
 
-    // Arrow
-    const dx = tgt.x - src.x, dy = tgt.y - src.y;
-    const len = Math.sqrt(dx * dx + dy * dy);
-    if (len < 1) return;
-    const ux = dx / len, uy = dy / len;
-    const nodeR = Math.sqrt(tgt.val || 1) * 6 + 8;
-    const ax = tgt.x - ux * nodeR, ay = tgt.y - uy * nodeR;
-    ctx.beginPath();
-    ctx.moveTo(ax, ay);
-    ctx.lineTo(ax - ux * 8 + uy * 4, ay - uy * 8 - ux * 4);
-    ctx.lineTo(ax - ux * 8 - uy * 4, ay - uy * 8 + ux * 4);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(88, 166, 184, 0.6)';
-    ctx.fill();
-  });
-
-  // Draw nodes
-  nodes.forEach(n => {
-    const r = Math.sqrt(n.val || 1) * 6 + 6;
-    ctx.beginPath();
-    ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = n.color + '33';
-    ctx.fill();
-    ctx.strokeStyle = n.color;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // Label
-    ctx.fillStyle = n.color;
-    ctx.font = '10px sans-serif';
+    // Small "could return" label
+    ctx.fillStyle = 'rgba(57, 255, 20, 0.25)';
+    ctx.font = '7px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(n.name, n.x, n.y - r - 6);
-
-    // Visit count
-    ctx.fillStyle = '#6e7681';
-    ctx.font = '9px monospace';
-    ctx.fillText(n.val + 'x', n.x, n.y + 4);
+    ctx.fillText('return?', (px + returnX) / 2, (py + targetY) / 2 - 2);
   });
+
+  // --- Actual path (thick colored line with curve) ---
+  ctx.beginPath();
+  ctx.lineWidth = 3;
+  steps.forEach((s, i) => {
+    const x = pad.l + i * xStep;
+    const y = pad.t + s.score * plotH;
+    if (i === 0) {
+      ctx.moveTo(x, y);
+    } else {
+      // Smooth curve between points
+      const prevX = pad.l + (i - 1) * xStep;
+      const prevY = pad.t + steps[i - 1].score * plotH;
+      const cpx = (prevX + x) / 2;
+      ctx.bezierCurveTo(cpx, prevY, cpx, y, x, y);
+    }
+  });
+  ctx.strokeStyle = '#c9d1d9';
+  ctx.stroke();
+
+  // --- Nodes on the path ---
+  steps.forEach((s, i) => {
+    const x = pad.l + i * xStep;
+    const y = pad.t + s.score * plotH;
+
+    // Node
+    const r = s.is_pivot ? 7 : 5;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = COLORS[s.classification] || '#c9d1d9';
+    ctx.fill();
+
+    // Pivot ring
+    if (s.is_pivot) {
+      ctx.beginPath();
+      ctx.arc(x, y, r + 3, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Topic label (rotated below)
+    ctx.save();
+    ctx.translate(x, H - 6);
+    ctx.rotate(-Math.PI / 4);
+    ctx.fillStyle = s.is_pivot ? COLORS[s.classification] : '#6e7681';
+    ctx.font = (s.is_pivot ? 'bold ' : '') + '8px sans-serif';
+    ctx.textAlign = 'right';
+    const label = s.topic_label.length > 14 ? s.topic_label.slice(0, 14) + '..' : s.topic_label;
+    ctx.fillText(label, 0, 0);
+    ctx.restore();
+  });
+
+  // --- Y axis labels ---
+  ctx.fillStyle = '#6e7681';
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText('goal', pad.l - 6, pad.t + 4);
+  ctx.fillText('0.5', pad.l - 6, pad.t + plotH * 0.5 + 3);
+  ctx.fillText('far', pad.l - 6, pad.t + plotH + 3);
+
+  // --- Horizontal grid ---
+  ctx.strokeStyle = '#21262d';
+  ctx.lineWidth = 0.5;
+  [0.25, 0.5, 0.75].forEach(v => {
+    const y = pad.t + v * plotH;
+    ctx.beginPath();
+    ctx.moveTo(pad.l, y);
+    ctx.lineTo(W - pad.r, y);
+    ctx.stroke();
+  });
+
+  // --- Legend ---
+  const legX = W - pad.r - 160;
+  const legY = pad.t + 4;
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'left';
+  // Actual path
+  ctx.strokeStyle = '#c9d1d9';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(legX, legY); ctx.lineTo(legX + 20, legY); ctx.stroke();
+  ctx.fillStyle = '#6e7681';
+  ctx.fillText('actual path', legX + 24, legY + 3);
+  // Could return
+  ctx.setLineDash([3, 4]);
+  ctx.strokeStyle = 'rgba(57, 255, 20, 0.4)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(legX, legY + 14); ctx.lineTo(legX + 20, legY + 14); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#6e7681';
+  ctx.fillText('could have returned', legX + 24, legY + 17);
 }
 
 window.addEventListener('resize', () => {
-  if (sessionData) drawDriftCurve();
-  if (topicGraph) {
-    const container = document.getElementById('topic-graph');
-    topicGraph.width(container.clientWidth);
-  }
+  if (sessionData) { drawDriftCurve(); drawSteeringMap(); }
 });
 
 fetch(`${API}/api/session`)
