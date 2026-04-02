@@ -162,10 +162,10 @@
       <canvas id="drift-curve" height="220"></canvas>
     </div>
 
-    <!-- Signal radar -->
-    <div class="drift-canvas-wrap">
-      <h3>Signal Breakdown (Selected Message)</h3>
-      <canvas id="signal-radar" height="200"></canvas>
+    <!-- 3D Topic Graph -->
+    <div class="drift-canvas-wrap" id="graph-wrap">
+      <h3>Topic Graph — How Your Thinking Steers</h3>
+      <div id="topic-graph" style="height:360px; border-radius:4px; overflow:hidden;"></div>
     </div>
 
     <!-- Step table -->
@@ -232,8 +232,12 @@
   It visualizes context-switching patterns in conversations — nothing more. Pivots are data, not deficits.
 </div>
 
+<script src="https://unpkg.com/three@0.175.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three-spritetext@1"></script>
+<script src="https://unpkg.com/3d-force-graph@1"></script>
 <script>
 let sessionData = null;
+let topicGraph = null;
 const API = window.location.origin;
 
 const COLORS = {
@@ -372,7 +376,7 @@ function render() {
   });
 
   drawDriftCurve();
-  drawSignalRadar();
+  buildTopicGraph();
 
   const latest = sessionData.steps[sessionData.steps.length - 1];
   if (latest) {
@@ -574,94 +578,97 @@ function drawDriftCurve() {
   ctx.setLineDash([]);
 }
 
-// --- Canvas: Signal Radar ---
+// --- 3D Topic Graph ---
 
-function drawSignalRadar() {
-  const canvas = document.getElementById('signal-radar');
-  const ctx = canvas.getContext('2d');
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = 200 * dpr;
-  ctx.scale(dpr, dpr);
-  const W = rect.width;
-  const H = 200;
-  ctx.clearRect(0, 0, W, H);
+function buildTopicGraph() {
+  const container = document.getElementById('topic-graph');
+  if (!sessionData || sessionData.steps.length < 2) {
+    container.innerHTML = '<p style="text-align:center; color:#6e7681; padding:40px; font-size:12px;">Load a session to see the topic graph.</p>';
+    return;
+  }
 
-  if (!sessionData || sessionData.steps.length === 0) return;
+  const steps = sessionData.steps;
 
-  const latest = sessionData.steps[sessionData.steps.length - 1];
-  const signals = [
-    { name: 'Semantic', val: latest.signals.semantic_distance, color: '#00E5FF' },
-    { name: 'Topic', val: latest.signals.topic_divergence, color: '#BF5AF2' },
-    { name: 'Specificity', val: latest.signals.specificity_shift, color: '#FF9F0A' },
-    { name: 'Velocity', val: latest.signals.velocity, color: '#a3506b' },
-  ];
-
-  const cx = W / 2;
-  const cy = H / 2;
-  const maxR = Math.min(cx, cy) - 30;
-  const n = signals.length;
-  const angleStep = (Math.PI * 2) / n;
-
-  [0.25, 0.5, 0.75, 1.0].forEach(r => {
-    ctx.beginPath();
-    for (let i = 0; i <= n; i++) {
-      const angle = i * angleStep - Math.PI / 2;
-      const x = cx + Math.cos(angle) * maxR * r;
-      const y = cy + Math.sin(angle) * maxR * r;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+  // Build nodes: one per unique topic, sized by visit frequency
+  const topicCounts = {};
+  const topicClassification = {};
+  steps.forEach(s => {
+    const t = s.topic_label;
+    topicCounts[t] = (topicCounts[t] || 0) + 1;
+    // Keep the highest-drift classification for color
+    if (!topicClassification[t] || s.score > (topicClassification[t].score || 0)) {
+      topicClassification[t] = { classification: s.classification, score: s.score };
     }
-    ctx.strokeStyle = '#21262d';
-    ctx.lineWidth = 1;
-    ctx.stroke();
   });
 
-  signals.forEach((s, i) => {
-    const angle = i * angleStep - Math.PI / 2;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(cx + Math.cos(angle) * maxR, cy + Math.sin(angle) * maxR);
-    ctx.strokeStyle = '#21262d';
-    ctx.stroke();
+  const nodes = Object.keys(topicCounts).map(topic => ({
+    id: topic,
+    name: topic,
+    val: topicCounts[topic],
+    color: COLORS[topicClassification[topic].classification] || '#c9d1d9',
+    classification: topicClassification[topic].classification,
+  }));
 
-    const lx = cx + Math.cos(angle) * (maxR + 16);
-    const ly = cy + Math.sin(angle) * (maxR + 16);
-    ctx.fillStyle = '#6e7681';
-    ctx.font = '9px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(s.name, lx, ly);
+  // Build edges: transitions between consecutive topics
+  const edgeMap = {};
+  for (let i = 1; i < steps.length; i++) {
+    const from = steps[i - 1].topic_label;
+    const to = steps[i].topic_label;
+    if (from === to) continue; // same topic, no edge
+    const key = `${from}|||${to}`;
+    edgeMap[key] = (edgeMap[key] || 0) + 1;
+  }
+
+  const links = Object.entries(edgeMap).map(([key, count]) => {
+    const [source, target] = key.split('|||');
+    return { source, target, value: count };
   });
 
-  ctx.beginPath();
-  signals.forEach((s, i) => {
-    const angle = i * angleStep - Math.PI / 2;
-    const r = s.val * maxR;
-    const x = cx + Math.cos(angle) * r;
-    const y = cy + Math.sin(angle) * r;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-  ctx.closePath();
-  ctx.fillStyle = 'rgba(88,166,184,0.15)';
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(88,166,184,0.8)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
+  // Destroy previous graph
+  if (topicGraph) {
+    topicGraph._destructor && topicGraph._destructor();
+    container.innerHTML = '';
+  }
 
-  signals.forEach((s, i) => {
-    const angle = i * angleStep - Math.PI / 2;
-    const r = s.val * maxR;
-    ctx.beginPath();
-    ctx.arc(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r, 3, 0, Math.PI * 2);
-    ctx.fillStyle = s.color;
-    ctx.fill();
-  });
+  // Build 3D force graph
+  topicGraph = ForceGraph3D()(container)
+    .backgroundColor('#0d1117')
+    .width(container.clientWidth)
+    .height(360)
+    .graphData({ nodes, links })
+    // Nodes
+    .nodeLabel(n => `<div style="background:#161b22;padding:4px 8px;border-radius:4px;border:1px solid #21262d;font-size:11px;color:#c9d1d9;font-family:sans-serif;"><strong>${n.name}</strong><br>Visits: ${n.val}<br>Peak: ${CLASS_NAMES[n.classification] || n.classification}</div>`)
+    .nodeColor(n => n.color)
+    .nodeVal(n => n.val * 3)
+    .nodeOpacity(0.9)
+    // Links
+    .linkWidth(l => Math.max(1, l.value * 1.5))
+    .linkColor(() => 'rgba(110, 118, 129, 0.4)')
+    .linkDirectionalArrowLength(4)
+    .linkDirectionalArrowRelPos(1)
+    .linkDirectionalParticles(l => l.value)
+    .linkDirectionalParticleWidth(2)
+    .linkDirectionalParticleColor(() => '#58a6b8')
+    // Camera
+    .cameraPosition({ z: 200 })
+    // Node text
+    .nodeThreeObjectExtend(true)
+    .nodeThreeObject(node => {
+      const sprite = new SpriteText(node.name);
+      sprite.color = node.color;
+      sprite.textHeight = 4;
+      sprite.position.y = 8;
+      return sprite;
+    });
 }
 
-window.addEventListener('resize', () => { if (sessionData) { drawDriftCurve(); drawSignalRadar(); } });
+window.addEventListener('resize', () => {
+  if (sessionData) drawDriftCurve();
+  if (topicGraph) {
+    const container = document.getElementById('topic-graph');
+    topicGraph.width(container.clientWidth);
+  }
+});
 
 fetch(`${API}/api/session`)
   .then(r => r.json())

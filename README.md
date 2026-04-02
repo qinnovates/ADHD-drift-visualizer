@@ -68,18 +68,6 @@ adhd-drift serve
 # Open http://127.0.0.1:3457
 ```
 
-### Embedding Providers
-
-The visualizer needs embeddings to measure semantic distance. It auto-detects the best available:
-
-| Provider | Env Var | Install | Notes |
-|----------|---------|---------|-------|
-| **Voyage AI** | `VOYAGE_API_KEY` | `pip install -e ".[voyage]"` | Voyage-3 embeddings, best quality |
-| **OpenAI** | `OPENAI_API_KEY` | `pip install -e ".[openai]"` | text-embedding-3-small |
-| **Local** | none needed | `pip install -e ".[local]"` | MiniLM, offline, ~80MB download |
-
-Override auto-detection: `ADHD_DRIFT_EMBEDDINGS=voyage|openai|local`
-
 ## Features
 
 | Feature | Description |
@@ -92,7 +80,8 @@ Override auto-detection: `ADHD_DRIFT_EMBEDDINGS=voyage|openai|local`
 | **Refocus Suggestions** | ADHD-aware, non-judgmental suggestions to get back on track |
 | **Chat Parsers** | Import from Claude Code, ChatGPT, or markdown conversation logs |
 | **Historical Mode** | Analyze MEMORY.md files for cross-session patterns |
-| **Dashboard** | Real-time visualization with drift curve, radar chart, topic flow |
+| **3D Topic Graph** | Interactive WebGL graph showing how topics connect and where your thinking steers |
+| **Dashboard** | Real-time visualization with drift curve, 3D graph, topic flow |
 | **Pluggable Embeddings** | Voyage AI, OpenAI, or local — use what you already have |
 | **CLI** | `adhd-drift analyze`, `serve`, `demo`, `history` — fits into your workflow |
 
